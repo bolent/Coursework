@@ -1,0 +1,215 @@
+---
+title: "Statistical inference with the GSS data"
+output:
+  rmarkdown::github_document
+  # pdf_document: default
+  # html_document:
+  #   fig_height: 4
+  #   highlight: pygments
+  #   theme: spacelab
+---
+
+## Setup
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "README_figs/README-"
+)
+```
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+```{r load-data}
+load("gss.Rdata")
+```
+
+## Part 1: Data
+
+Each row of the data set represents the interview with a person. The interviews are carried out face-to-face by means of a questionnaire.
+
+The data come from the General Social Surveys (GSS), which gathers data on contemporary American society in order to monitor and explain trends and constants in attitudes, behaviors, and attributes.
+
+The General Social Surveys have been conducted in 1972, 1973, 1974, 1975, 1976, 1977, 1978, 1980, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1993, 1994, 1996, 1998, 2000, 2002, 2004, 2006, 2008, 2010, 2012, 2014, 2016, and 2018. 
+
+In this study, the cumulative data set merges all surveys from 1972 to 2012 into a single file, for a total of 57,061 interviews.
+
+Each survey from 1972 to 2004 was an independently drawn sample of English-speaking persons 18 years of age or over, living in non-institutional arrangements within the United States. Starting in 2006 Spanish-speakers were added to the target population. 
+
+Block quota sampling was used in 1972, 1973, and 1974 surveys and for half of the  1975  and  1976  surveys, and thus sample group members are selected non-randomly.  Full  probability  sampling  was  employed  in  half  of  the  1975  and  1976  surveys  and  the  1977,  1978,  1980,  1982-1991, 1993-1998, 2000, 2002, 2004, 2006, 2008,  2010, 2012, 2014, 2016, and 2018 surveys. The full probability sample design leads to a random construction of the samples.
+
+As a first step in the analysis, we should take a look at the variables in the data set:
+
+```{r}
+str(gss)
+```
+Our analysis will be focused on the year 2012:
+
+```{r}
+us12 <- gss %>% 
+    filter(gss$year == 2012)
+```
+
+
+## Part 2: Research question
+
+The question we want to answer is: "In 2012, does that appear to be a relationship between the race of each respondent and the social class in which they identify themselves?".
+
+We recall tha in the survery the race is a choice between **white**, **black**, **other**, while the social class in which the respondent identifies is a choice between the **lower class**, the **working class**, the **middle class**, the **upper class**, **no class**, or **NA**.
+
+## Part 3: Exploratory data analysis
+
+We count how many interviews were conducted in 2012
+
+```{r}
+nrow(us12)
+```
+
+Given the large number of columns in the data set, let's focus only on those that interest us, race and class, which are two categorical columns.
+
+Let's use some summary statistics to describe them:
+
+```{r}
+cols <- c("race", "class")
+summary(us12[cols])
+```
+As you can see, we have 17 unknown values for the social class, while we have 0 elements for the No Class. We will exclude both the unavailable NA data and the entire No Class.
+
+Let's now check the number of people of each social class, within the various races, together with the percentages:
+
+```{r}
+us12_freq <- us12 %>%
+     count(race, class) %>%
+     group_by(race) %>%
+     mutate(prop = prop.table(n))
+us12_freq
+```
+
+We use a bar plot graph to represent the frequencies of each social class within each race
+
+```{r}
+ggplot(us12_freq, aes(x = race, y = prop))+
+     geom_bar(
+         aes(fill = class), stat = "identity", color = "white",
+         position = position_dodge(0.9)
+     )
+```
+
+From this graph, we can see, for example, that within whites the working class is less relevant than the middle class. Among blacks and the other race, however, the working class is more relevant than the middle class.
+
+We generate a contingency table that is useful to analyse the relationship between race and social class
+
+```{r}
+observed <- as.data.frame.matrix(addmargins(table(us12$class,us12$race),c(1,2)))
+observed
+```
+
+As you can see, we have excluded NA classes. We also remove the "No Class" because it has no elements
+
+```{r}
+observed <- observed[!(row.names(observed) %in% c("No Class")),]
+observed
+```
+
+
+## Part 4: Inference
+
+We will use a chi-square independence test to assess the independence between the two categorical variables race and social class.
+We cannot calculate a confidence interval because we want to compare two categorical variables, not averages or proportions.
+
+### State hypothesis
+
+\[
+\begin{aligned}
+H_0 &= \text{nothing going on} = \text{Race and social class are independent. The rate of belonging to a social class does not vary according to race.} \\
+H_A &= \text{something going on} = \text{Race and social class are dependent. The rate of belonging to a social class varies according to race.}
+\end{aligned}
+\]
+
+### Check conditions
+
+\begin{enumerate}
+\item Independence
+\item Sample size
+\end{enumerate}
+1. Independence: 
+    - random sampling and assignment. Ok for the discussion in part 1 on data
+    - we're sampling without replacement and the sample size n = 1957 < 10% total American population in 2012
+    - each case only contributes to one cell in the table. Yes because each intervieweed has a single race and a single social class
+2. Sample size: each particular scenario (cell) must have at least 5 expected cases. It's verified, we'll see in a little while
+
+### Perform inference
+
+Assuming $H_0$ true, so if in fact race and class are independent, how many of the white people, black people, other people would we expect to be in the lower, working, middle, upper and no class?
+
+We build the matrix of expected values under the assumption that $H_0$ is true, using the formula:
+
+\[
+\text{expected value (position i,j)} = \frac{\text{row i total} \cdot \text{column j total}}{\text{table total}}
+\]
+
+Let's do the calculations:
+
+```{r}
+lower_rate <- 200 / 1957
+working_rate <- 853 / 1957
+middle_rate <- 839 / 1957
+upper_rate <- 65 / 1957
+class_rates <- c(lower_rate, working_rate, middle_rate, upper_rate)
+
+races_count = c(1464,297,196)
+
+num_classes = length(class_rates)
+num_races = ncol(observed)-1
+
+expected <- matrix(NA, nrow = num_classes, ncol = num_races)
+for (i in 1:num_classes) {
+  for (j in 1:num_races) {
+    expected[i,j] <- races_count[j]*class_rates[i]
+  }
+}
+
+expected = as.data.frame.matrix(expected)
+row.names(expected) <- row.names(observed)[1:num_classes]
+names(expected) = names(observed)[1:num_races]
+expected
+```
+
+We calculate the chi-square test statistics
+
+```{r}
+observed <- observed[,-4]
+observed <- head(observed,-1)
+diff <- (observed - expected)^2 / expected
+diff
+```
+
+We calculate the p-value
+
+```{r}
+chi_square_stat = sum(diff)
+chi_square_stat
+
+deg_freedom = (num_classes-1)*(num_races-1)
+
+pval = pchisq(chi_square_stat, deg_freedom, lower.tail = FALSE)
+pval
+```
+
+Using as significance level $0.05$, since the p-value found is about $0.0003$ and is less than $0.05$, we can reject the null $H_0$ hypothesis and conclude that the data give convincing evidence that race and social class are associated.
+
+### Interpret results
+
+Since this is an observational study, we cannot conclude anything on the causality between the two variables. It could be that the belonging to a social class is influenced by other variables that we are not considering. 
+
+We cannot therefore conclude that there is a causal relationship between the two variables, race and social class.
+
+
+
