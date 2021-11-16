@@ -2,7 +2,7 @@
 
 This is the main repository of projects for my data science online courses. 
 
-R projects come from Duke University on Coursera.
+R projects come from the Statistics with R Specialization offered by Duke University on Coursera.
 
 ## Contents
 
